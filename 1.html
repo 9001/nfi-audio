@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8" />
+<title>file browser</title>
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=0.5">
+<style>
+/* https://github.com/9001/nfi-audio
+ * ed <irc.rizon.net> MIT-licensed
+*/
+html,body,tr,th,td,#list,a {
+	color: inherit;
+	background: none;
+	font-weight: inherit;
+	font-size: inherit;
+	padding: none;
+	border: none;
+}
+html {
+	color: #ccc;
+	background: #333;
+	font-family: sans-serif;
+	text-shadow: 1px 1px 0px #000;
+}
+html, body {
+	margin: 0;
+	padding: 0;
+}
+body {
+	padding-bottom: 5em;
+}
+#path {
+	color: #aca;
+	text-shadow: 1px 1px 0 #000;
+	font-variant: small-caps;
+	font-weight: normal;
+	background: #4c4c4c;
+	display: inline-block;
+	padding: .2em .5em .2em 1em;
+	border-radius: 0 .3em .3em 0;
+	box-shadow: .1em .1em .4em #222;
+	margin: 1em 0;
+	font-size: 1.4em;
+}
+#list {
+	border-collapse: collapse;
+	margin-left: 3.1em;
+}
+#list tbody a {
+	display: block;
+	padding: .3em 0;
+}
+a {
+	color: #fc5;
+	padding: .2em;
+	text-decoration: none;
+}
+#list a:hover {
+	color: #fff;
+	background: #161616;
+}
+thead a {
+	color: #999;
+	font-weight: normal;
+}
+tr:hover {
+	background: #1c1c1c;
+}
+thead th {
+	padding: .5em 1.3em .3em 1.3em;
+}
+thead th:last-child {
+	background: #444;
+	border-radius: .7em 0 0 0;
+}
+thead th:first-child {
+	background: #222;
+}
+tbody,
+thead th:nth-child(2) {
+	background: #222;
+	border-radius: 0 .7em 0 0;
+}
+td {
+	margin: 0;
+	padding: 0 .5em;
+}
+tbody td.size {
+	font-family: monospace;
+	font-size: 1.3em;
+	text-align: right;
+	padding-right: 1em;
+	white-space: nowrap;
+}
+tbody td:first-child {
+	padding-left: 1.5em;
+	color: #888;
+}
+tbody tr:first-child td {
+	padding-top: .9em;
+}
+tbody tr:last-child td {
+	padding-bottom: 1.3em;
+	border-bottom: .5em solid #444;
+}
+thead th[style] {
+	width: auto !important;
+}
+</style></head><body>
+<h1 id="path">
