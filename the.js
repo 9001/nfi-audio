@@ -2,6 +2,7 @@
 // ed <irc.rizon.net> MIT-licensed
 
 
+// error handler for mobile devices
 function hcroak(msg) {
 	document.body.innerHTML = msg;
 	window.onerror = undefined;
@@ -349,6 +350,7 @@ var widget = (function(){
 })();
 
 
+// buffer/position bar
 var pbar = (function(){
 	var r = {};
 	r.bcan = ebi('barbuf');
@@ -383,7 +385,7 @@ var pbar = (function(){
 			grad.addColorStop(0,   'hsl(85,35%,42%)');
 			grad.addColorStop(0.49,'hsl(85,40%,49%)');
 			grad.addColorStop(0.50,'hsl(85,37%,47%)');
-			grad.addColorStop(1,   'hsl(85,35%,40%)');
+			grad.addColorStop(1,   'hsl(85,35%,42%)');
 			gradh = sh;
 		}
 		bctx.fillStyle = grad;
@@ -414,6 +416,7 @@ var pbar = (function(){
 })();
 
 
+// hook up the widget buttons
 (function(){
 	var bskip = function(n) {
 		var tid = null;
@@ -457,7 +460,7 @@ var pbar = (function(){
 })();
 
 
-// playback position updater
+// periodic tasks
 (function(){
 	var nth = 0;
 	var progress_updater = function() {
@@ -465,15 +468,24 @@ var pbar = (function(){
 			widget.paused(true);
 		}
 		else {
+			// indicate playback state in ui
 			widget.paused(mp.au.paused);
 		
+			// draw current position in song
 			if (!mp.au.paused)
 				pbar.drawpos();
 
+			// occasionally draw buffered regions
 			if (++nth == 10) {
 				pbar.drawbuf();
 				nth = 0;
 			}
+			
+			// switch to next track if approaching the end
+			var pos = mp.au.currentTime;
+			var len = mp.au.duration;
+			if (pos > 0 && pos > len - 0.1)
+				play(mp.au.tid + 1);
 		}
 		setTimeout(progress_updater, 100);
 	};
@@ -481,6 +493,7 @@ var pbar = (function(){
 })();
 
 
+// event from play button next to a file in the list
 function ev_play(e) {
 	e.preventDefault();
 	play(parseInt(this.getAttribute('id').substr(3)));
@@ -492,6 +505,7 @@ function setclass(id, clas) {
 }
 
 
+// plays the tid'th audio file on the page
 function play(tid) {
 	if (mp.au) {
 		mp.au.pause();
@@ -500,8 +514,9 @@ function play(tid) {
 	}
 	else {
 		mp.au = new Audio();
-		mp.au.addEventListener('error', playa_error, true);
-		mp.au.addEventListener('progress', playa_progress, false);
+		mp.au.addEventListener('error', evau_error, true);
+		mp.au.addEventListener('progress', pbar.drawpos, false);
+		widget.open();
 	}
 	
 	if (mp.tracks.length == 0)
@@ -529,17 +544,13 @@ function play(tid) {
 	catch (ex) {
 		alert('playback failed: ' + ex);
 	}
-	badfile();
-}
-
-
-function badfile() {
 	setclass('trk'+mp.au.tid, 'play');
 	setTimeout('play(' + (mp.au.tid+1) + ');', 500);
 }
 
 
-function playa_error(e) {
+// event from the audio object if something breaks
+function evau_error(e) {
 	var err = '';
 	var eplaya = (e && e.target) || (window.event && window.event.srcElement);
 	var url = eplaya.src;
@@ -569,11 +580,7 @@ function playa_error(e) {
 }
 
 
-function playa_progress(e) {
-	pbar.drawpos();
-}
-
-
+// hide the ui below
 function unblocked() {
 	var dom = ebi('blocked');
 	if (dom)
@@ -581,6 +588,7 @@ function unblocked() {
 }
 
 
+// show ui to manually start playback of a linked song
 function autoplay_blocked()
 {
 	var body = document.body || document.getElementsByTagName('body')[0];
@@ -591,7 +599,7 @@ function autoplay_blocked()
 			<a id="blk_go"></a>
 		</div>
 		<div id="blk_abrt">
-			<a id='blk_na">Cancel<br /><br />(show file list)</a>
+			<a id="blk_na">Cancel<br /><br />(show file list)</a>
 		</div>`;
 	
 	unblocked();
@@ -603,10 +611,14 @@ function autoplay_blocked()
 	go.onclick = function() {
 		mp.au.play();
 		unblocked();
-	}
+	};
 	na.onclick = unblocked;
 }
 
 
-// debug
-widget.open();
+// autoplay linked track
+(function(){
+	var v = location.hash;
+	if (v && v.length > 4 && v.indexOf('#trk') === 0)
+		play(parseInt(v.substr(4)));
+})();

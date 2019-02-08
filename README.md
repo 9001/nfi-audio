@@ -3,12 +3,11 @@ nginx media player
 
 
 # status
-* capable of playing audio
-* just stops when a track finishes
+* works
 
 
 # soon
-* playback control widget
+* volume slider #wow #whoa
 * super fancy album art view
 * visualizer? maybe
 * opus support for iCrap
@@ -18,6 +17,8 @@ nginx media player
 run one of these depending on distro:
 * alpine: `apk add nginx-mod-http-fancyindex`
 * centos: `yum install nginx-module-fancyindex`
+* debian: `apt install libnginx-mod-http-fancyindex`
+* gentoo: [maybe you have more luck](https://ocv.me/stuff/gentoops.png)
 
 
 #### `vim /etc/nginx/nginx.conf`
