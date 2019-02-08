@@ -115,13 +115,22 @@ a.play.act {
 	padding-left: .07em;
 	color: #fff;
 }
-#pbar {
+#barpos,
+#barbuf {
 	position: absolute;
 	bottom: 1em;
 	left: 1em;
 	height: 2em;
+	border-radius: 9em;
 	width: calc(100% - 2em);
+}
+#barbuf {
 	background: rgba(0,0,0,0.2);
+	z-index: 21;
+}
+#barpos {
+	box-shadow: -.03em -.03em .7em rgba(0,0,0,0.5) inset;
+	z-index: 22;
 }
 #pctl {
 	position: absolute;
@@ -240,7 +249,8 @@ var mp = (function(){
 				href="#" id="bplay">▶</a><a
 				href="#" id="bnext">⏭</a></div>
 			<div id="pvol"></div>
-			<canvas id="pbar"></canvas>
+			<canvas id="barpos"></canvas>
+			<canvas id="barbuf"></canvas>
 		</div>
 	`;
 	// ⏮▶⏸⏭
@@ -255,6 +265,7 @@ var widget = (function(){
 	var wtoggle = document.getElementById('wtoggle');
 	var touchmode = false;
 	var side_open = false;
+	var was_paused = true;
 	
 	ret.open = function() {
 		if (side_open)
@@ -277,6 +288,12 @@ var widget = (function(){
 		e.preventDefault();
 		return false;
 	};
+	ret.paused = function(paused) {
+		if (was_paused != paused) {
+			was_paused = paused;
+			ebi('bplay').innerHTML = paused ? '▶' : '⏸';
+		}
+	};
 	var click_handler = function(e) {
 		if (!touchmode)
 			ret.toggle(e);
@@ -296,15 +313,67 @@ var widget = (function(){
 
 
 var pbar = (function(){
-	var ret = {};
-	ret.can = ebi('pbar');
-	ret.ctx = ret.can.getContext('2d');
-	ret.ctxr = (window.devicePixelRatio || 1) / (
-		ret.ctx.webkitBackingStorePixelRatio ||
-		ret.ctx.mozBackingStorePixelRatio ||
-		ret.ctx.msBackingStorePixelRatio ||
-		ret.ctx.oBackingStorePixelRatio ||
-		ret.ctx.BackingStorePixelRatio || 1);
+	var r = {};
+	r.bcan = ebi('barbuf');
+	r.pcan = ebi('barpos');
+	r.bctx = r.bcan.getContext('2d');
+	r.pctx = r.pcan.getContext('2d');
+	
+	var bctx = r.bctx;
+	var pctx = r.pctx;
+	var scale = (window.devicePixelRatio || 1) / (
+		bctx.webkitBackingStorePixelRatio ||
+		bctx.mozBackingStorePixelRatio ||
+		bctx.msBackingStorePixelRatio ||
+		bctx.oBackingStorePixelRatio ||
+		bctx.BackingStorePixelRatio || 1);
+	
+	var gradh = 0;
+	var grad = null;
+	
+	r.drawbuf = function() {
+		var cs = getComputedStyle(r.bcan);
+		var sw = parseInt(cs['width']);
+		var sh = parseInt(cs['height']);
+		var sm = sw * 1.0 / mp.au.duration;
+		
+		r.bcan.width = (sw * scale);
+		r.bcan.height = (sh * scale);
+		bctx.setTransform(scale, 0, 0, scale, 0, 0);
+		
+		if (!grad || gradh != sh) {
+			grad = bctx.createLinearGradient(0,0,0,sh);
+			grad.addColorStop(0,   'hsl(85,35%,42%)');
+			grad.addColorStop(0.49,'hsl(85,40%,49%)');
+			grad.addColorStop(0.50,'hsl(85,37%,47%)');
+			grad.addColorStop(1,   'hsl(85,35%,40%)');
+			gradh = sh;
+		}
+		bctx.fillStyle = grad;
+		bctx.clearRect(0, 0, sw, sh);
+		for (var a = 0; a < mp.au.buffered.length; a++) {
+			var x1 = sm * mp.au.buffered.start(a);
+			var x2 = sm * mp.au.buffered.end(a);
+			bctx.fillRect(x1, 0, x2-x1, sh);
+		}
+	};
+	r.drawpos = function() {
+		var cs = getComputedStyle(r.bcan);
+		var sw = parseInt(cs['width']);
+		var sh = parseInt(cs['height']);
+		var sm = sw * 1.0 / mp.au.duration;
+		
+		r.pcan.width = (sw * scale);
+		r.pcan.height = (sh * scale);
+		pctx.setTransform(scale, 0, 0, scale, 0, 0);
+		pctx.clearRect(0, 0, sw, sh);
+		
+		var w = 8;
+		var x = sm * mp.au.currentTime;
+		pctx.fillStyle = '#573'; pctx.fillRect((x-w/2)-1, 0, w+2, sh);
+		pctx.fillStyle = '#dfc'; pctx.fillRect((x-w/2),   0,   8, sh);
+	};
+	return r;
 })();
 
 
@@ -338,6 +407,35 @@ var pbar = (function(){
 		e.preventDefault();
 		bskip(1);
 	};
+	ebi('barpos').onclick = function(e) {
+		var rect = pbar.pcan.getBoundingClientRect();
+		var x = e.clientX - rect.left;
+		var mul = x * 1.0 / rect.width;
+		mp.au.currentTime = mp.au.duration * mul;
+		mp.au.play();
+	};
+})();
+
+
+// playback position updater
+(function(){
+	var nth = 0;
+	var progress_updater = function() {
+		if (!mp.au)
+			widget.paused(true);
+		else
+			widget.paused(mp.au.paused);
+		
+		if (mp.au && !mp.au.paused)
+			pbar.drawpos();
+
+		if (++nth == 10) {
+			pbar.drawbuf();
+			nth = 0;
+		}
+		setTimeout(progress_updater, 100);
+	};
+	progress_updater();
 })();
 
 
@@ -429,6 +527,7 @@ function playa_error(e) {
 
 
 function playa_progress(e) {
+	pbar.drawpos();
 }
 
 
