@@ -2,6 +2,43 @@
 // ed <irc.rizon.net> MIT-licensed
 
 
+function hcroak(msg) {
+	document.body.innerHTML = msg;
+	window.onerror = undefined;
+	throw 'fatal_err';
+}
+function croak(msg) {
+	document.body.textContent = msg;
+	window.onerror = undefined;
+	throw msg;
+}
+function esc(txt) {
+	return txt.replace(/[&"<>]/g, function(c) {
+		return {
+			'&': '&amp;',
+			'"': '&quot;',
+			'<': '&lt;',
+			'>': '&gt;'
+		}[c];
+	});
+}
+window.onerror = function(msg, url, lineNo, columnNo, error) {
+	window.onerror = undefined;
+	var html = ['<h1>you hit a bug!</h1><p>please screenshot this error and send me a copy arigathanks gozaimuch (ed/irc.rizon.net or ed#2644)</p><p>',
+		esc(String(msg)), '</p><p>', esc(url + ' @' + lineNo + ':' + columnNo), '</p>'];
+	
+	if (error) {
+		var find = ['desc','stack','trace'];
+		for (var a = 0; a < find.length; a++)
+			if (String(error[find[a]]) !== 'undefined')
+				html.push('<h2>' + find[a] + '</h2>' + 
+					esc(String(error[find[a]])).replace(/\n/g, '<br />\n'));
+	}
+	document.body.style.fontSize = '0.8em';
+	hcroak(html.join('\n'));
+};
+
+
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/endsWith
 if (!String.prototype.endsWith) {
 	String.prototype.endsWith = function(search, this_len) {
@@ -408,6 +445,9 @@ var pbar = (function(){
 		bskip(1);
 	};
 	ebi('barpos').onclick = function(e) {
+		if (!mp.au)
+			return play(0);
+		
 		var rect = pbar.pcan.getBoundingClientRect();
 		var x = e.clientX - rect.left;
 		var mul = x * 1.0 / rect.width;
@@ -421,17 +461,19 @@ var pbar = (function(){
 (function(){
 	var nth = 0;
 	var progress_updater = function() {
-		if (!mp.au)
+		if (!mp.au) {
 			widget.paused(true);
-		else
+		}
+		else {
 			widget.paused(mp.au.paused);
 		
-		if (mp.au && !mp.au.paused)
-			pbar.drawpos();
+			if (!mp.au.paused)
+				pbar.drawpos();
 
-		if (++nth == 10) {
-			pbar.drawbuf();
-			nth = 0;
+			if (++nth == 10) {
+				pbar.drawbuf();
+				nth = 0;
+			}
 		}
 		setTimeout(progress_updater, 100);
 	};
@@ -481,6 +523,7 @@ function play(tid) {
 			autoplay_blocked();
 		
 		location.hash = 'trk' + tid;
+		pbar.drawbuf();
 		return true;
 	}
 	catch (ex) {
