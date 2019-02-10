@@ -4,13 +4,13 @@ nginx media player
 
 # status
 * works
+* opus and vorbis support on iOS (iPhone/iPad)
 
 
 # soon
 * volume slider #wow #whoa
 * super fancy album art view
 * visualizer? maybe
-* opus support for iCrap
 
 
 # installation
@@ -46,4 +46,13 @@ location /music {
 #### `cd` into `/var/www/your-website` and...
 ```
 git clone https://github.com/9001/nfi-audio .nfi-audio
+```
+
+
+# ogg/vorbis/opus on iPhone/iPad
+
+special thanks to apple for refusing to support open standards which just happens to have higher compression efficiencies than the proprietary patent-encumbered audio codecs haha
+
+```
+cd /var/www/your-website/.nfi-audio && ./deps.sh
 ```

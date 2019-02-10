@@ -51,6 +51,20 @@ if (!String.prototype.endsWith) {
 }
 
 
+// https://stackoverflow.com/a/950146
+function import_js(url, cb) {
+	var head = document.head || document.getElementsByTagName('head')[0];
+	var script = document.createElement('script');
+	script.type = 'text/javascript';
+	script.src = url;
+	
+	script.onreadystatechange = cb;
+	script.onload = cb;
+	
+	head.appendChild(script);
+}
+
+
 function ebi(id) {
 	return document.getElementById(id);
 }
@@ -222,9 +236,10 @@ var mp = (function(){
 	var tracks = [];
 	var ret = {
 		'au': null,
+		'au_native': null,
+		'au_ogvjs': null,
 		'tracks': tracks,
-		'cover_url': '',
-		'have_opus': false
+		'cover_url': ''
 	};
 	var re_audio = new RegExp(/\.(opus|ogg|m4a|aac|mp3|wav|flac)$/, 'i');
 	var re_cover = new RegExp(/^(cover|folder|cd|front|back)\.(jpe?g|png|gif)$/, 'i');
@@ -245,9 +260,6 @@ var mp = (function(){
 		
 		var m = re_audio.exec(fn);
 		if (m) {
-			if (m[1].toLowerCase() == 'opus')
-				ret.have_opus = true;
-			
 			var ntrack = tracks.length;
 			tracks.push([url, fn]);
 			
@@ -262,6 +274,7 @@ var mp = (function(){
 		html.push('</tr>');
 	}
 	html.push('</tbody>');
+	//alert(tracks.join('\n\n'));
 	
 	var tab = ebi('list');
 	tab.innerHTML = html.join('\n');
@@ -455,7 +468,9 @@ var pbar = (function(){
 		var x = e.clientX - rect.left;
 		var mul = x * 1.0 / rect.width;
 		mp.au.currentTime = mp.au.duration * mul;
-		mp.au.play();
+		if (mp.au === mp.au_native)
+			// hack: ogv.js breaks on .play() during playback
+			mp.au.play();
 	};
 })();
 
@@ -463,6 +478,7 @@ var pbar = (function(){
 // periodic tasks
 (function(){
 	var nth = 0;
+	var last_skip_url = '';
 	var progress_updater = function() {
 		if (!mp.au) {
 			widget.paused(true);
@@ -484,8 +500,12 @@ var pbar = (function(){
 			// switch to next track if approaching the end
 			var pos = mp.au.currentTime;
 			var len = mp.au.duration;
-			if (pos > 0 && pos > len - 0.1)
-				play(mp.au.tid + 1);
+			if (pos > 0 && pos > len - 0.1) {
+				if (last_skip_url != mp.au.src)
+					play(mp.au.tid + 1);
+				
+				last_skip_url = mp.au.src;
+			}
 		}
 		setTimeout(progress_updater, 100);
 	};
@@ -497,6 +517,7 @@ var pbar = (function(){
 function ev_play(e) {
 	e.preventDefault();
 	play(parseInt(this.getAttribute('id').substr(3)));
+	return false;
 }
 
 
@@ -505,20 +526,12 @@ function setclass(id, clas) {
 }
 
 
+var iOS = !!navigator.platform &&
+	/iPad|iPhone|iPod/.test(navigator.platform);
+
+
 // plays the tid'th audio file on the page
-function play(tid) {
-	if (mp.au) {
-		mp.au.pause();
-		mp.au.src = '';
-		setclass('trk'+mp.au.tid, 'play');
-	}
-	else {
-		mp.au = new Audio();
-		mp.au.addEventListener('error', evau_error, true);
-		mp.au.addEventListener('progress', pbar.drawpos, false);
-		widget.open();
-	}
-	
+function play(tid, call_depth) {
 	if (mp.tracks.length == 0)
 		return alert('no audio found wait what');
 
@@ -528,12 +541,57 @@ function play(tid) {
 	while (tid < 0)
 		tid += mp.tracks.length;
 	
+	if (mp.au) {
+		mp.au.pause();
+		setclass('trk'+mp.au.tid, 'play');
+	}
+	
+	// ogv.js breaks on .play() unless directly user-triggered
+	var hack_attempt_play = true;
+	
+	var url = mp.tracks[tid][0];
+	if (iOS && /\.(ogg|opus)$/i.test(url)) {
+		if (mp.au_ogvjs) {
+			mp.au = mp.au_ogvjs;
+		}
+		else if (window['OGVPlayer']) {
+			mp.au = mp.au_ogvjs = new OGVPlayer();
+			hack_attempt_play = false;
+			mp.au.addEventListener('error', evau_error, true);
+			mp.au.addEventListener('progress', pbar.drawpos, false);
+			widget.open();
+		}
+		else {
+			if (call_depth !== undefined)
+				return alert('failed to load ogv.js');
+			
+			show_modal('<h1>loading ogv.js</h1><h2>thanks apple</h2>');
+			
+			import_js('/.nfi-audio/ogvjs-1.5.8/ogv.js', function() {
+				play(tid, 1);
+			});
+			
+			return;
+		}
+	}
+	else {
+		if (!mp.au_native) {
+			mp.au = mp.au_native = new Audio();
+			mp.au.addEventListener('error', evau_error, true);
+			mp.au.addEventListener('progress', pbar.drawpos, false);
+			widget.open();
+		}
+		mp.au = mp.au_native;
+	}
+	
 	mp.au.tid = tid;
-	mp.au.src = mp.tracks[tid][0];
+	mp.au.src = url;
 	setclass('trk'+tid, 'play act');
 	
 	try {
-		mp.au.play();
+		if (hack_attempt_play)
+			mp.au.play();
+		
 		if (mp.au.paused)
 			autoplay_blocked();
 		
@@ -575,6 +633,8 @@ function evau_error(e) {
 	if (eplaya.error.message)
 		err += '\n\n' + eplaya.error.message;
 	
+	err += '\n\n' + eplaya + '\n' + eplaya.src;
+	
 	alert(err);
 	play(eplaya.tid+1);
 }
@@ -588,29 +648,35 @@ function unblocked() {
 }
 
 
-// show ui to manually start playback of a linked song
-function autoplay_blocked()
-{
+// show a modal
+function show_modal(html) {
 	var body = document.body || document.getElementsByTagName('body')[0];
 	var div = document.createElement('div');
 	div.setAttribute('id', 'blocked');
-	div.innerHTML = `
+	div.innerHTML = html;
+	unblocked();
+	body.appendChild(div);
+}
+
+
+// show ui to manually start playback of a linked song
+function autoplay_blocked(tid)
+{
+	show_modal(`
 		<div id="blk_play">
 			<a id="blk_go"></a>
 		</div>
 		<div id="blk_abrt">
 			<a id="blk_na">Cancel<br /><br />(show file list)</a>
-		</div>`;
+		</div>`);
 	
-	unblocked();
-	body.appendChild(div);
 	var go = ebi('blk_go');
 	var na = ebi('blk_na');
 	
 	go.textContent = 'Play "' + mp.tracks[mp.au.tid][1] + '"';
 	go.onclick = function() {
-		mp.au.play();
 		unblocked();
+		mp.au.play();
 	};
 	na.onclick = unblocked;
 }
