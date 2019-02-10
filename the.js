@@ -498,13 +498,13 @@ var pbar = (function(){
 			}
 			
 			// switch to next track if approaching the end
-			var pos = mp.au.currentTime;
-			var len = mp.au.duration;
-			if (pos > 0 && pos > len - 0.1) {
-				if (last_skip_url != mp.au.src)
+			if (last_skip_url != mp.au.src) {
+				var pos = mp.au.currentTime;
+				var len = mp.au.duration;
+				if (pos > 0 && pos > len - 0.1) {
+					last_skip_url = mp.au.src;
 					play(mp.au.tid + 1);
-				
-				last_skip_url = mp.au.src;
+				}
 			}
 		}
 		setTimeout(progress_updater, 100);
