@@ -73,23 +73,30 @@ function ebi(id) {
 (function() {
 	var css = `
 #path a {
-	margin: 0 0 0 -.6em;
-	padding: 0 0 0 .6em;
+	margin: 0 0 0 -.2em;
+	padding: 0 0 0 .4em;
 }
+/*
+#path a+a, #path a+a+a+a { box-shadow: 1px 1px 1px #0f0; }
+#path a, #path a+a+a { box-shadow: 1px 1px 1px #f0f inset; }
+*/
 #path a:after {
 	content: '';
 	width: 1.05em;
 	height: 1.05em;
-	margin: -.2em .5em -.2em -.5em;
+	margin: -.2em .3em -.2em -.4em;
 	display: inline-block;
-	border: 1px solid rgba(255,255,255,0.1);
-	border-width: .1em .1em 0 0;
+	border: 1px solid rgba(255,224,192,0.3);
+	border-width: .05em .05em 0 0;
 	transform: rotate(45deg);
-	background: linear-gradient(45deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.2) 75%, rgba(0,0,0,0.3));
+	background: linear-gradient(45deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.25) 75%, rgba(0,0,0,0.35));
 }
 #path a:hover {
 	color: #fff;
 	background: linear-gradient(90deg, rgba(0,0,0,0), rgba(0,0,0,0.2), rgba(0,0,0,0));
+}
+#path span {
+	padding-left: .2em;
 }
 a.play {
 	color: #e70;
@@ -201,6 +208,16 @@ a.play.act {
 	border-radius: .3em;
 	box-shadow: -.02em -.02em .3em rgba(0,0,0,0.2) inset;
 }
+#pvol {
+	position: absolute;
+	top: .7em;
+	right: 1em;
+	height: 1.6em;
+	border-radius: 9em;
+	max-width: 12em;
+	width: calc(100% - 10.5em);
+	background: rgba(0,0,0,0.2);
+}
 `;
 	var head = document.head || document.getElementsByTagName('head')[0];
 	var style = document.createElement('style');
@@ -221,6 +238,8 @@ a.play.act {
 		// encodeURI          A-Z a-z 0-9 ; , / ? : @ & = + $ - _ . ! ~ * ' ( ) #
 		// encodeURIComponent A-Z a-z 0-9                     - _ . ! ~ * ' ( )
 		var esc_node = encodeURIComponent(nodes[a]);
+		esc_node = nodes[a];  // nevermind nginx-fancyindex doesn't do any filename escaping haha
+		
 		path += esc_node + '/';
 		if (a == aa - 1)
 			html.push('<span>' + esc_node + '</span>');
@@ -283,6 +302,24 @@ var mp = (function(){
 	for (var a = 0, aa = tracks.length; a<aa; a++)
 		ebi('trk'+a).onclick = ev_play;
 	
+	ret.vol = localStorage.getItem('vol');
+	if (ret.vol !== null)
+		ret.vol = parseFloat(ret.vol);
+	else
+		ret.vol = 0.5;
+	
+	ret.expvol = function() {
+		return 0.5 * ret.vol + 0.5 * ret.vol * ret.vol;
+	};
+	
+	ret.setvol = function(vol) {
+		ret.vol = Math.max(Math.min(vol, 1), 0);
+		localStorage.setItem('vol', vol);
+		
+		if (ret.au)
+			ret.au.volume = ret.expvol();
+	};
+	
 	return ret;
 })();
 
@@ -299,7 +336,7 @@ var mp = (function(){
 				href="#" id="bprev">⏮</a><a
 				href="#" id="bplay">▶</a><a
 				href="#" id="bnext">⏭</a></div>
-			<div id="pvol"></div>
+			<canvas id="pvol"></canvas>
 			<canvas id="barpos"></canvas>
 			<canvas id="barbuf"></canvas>
 		</div>
@@ -425,6 +462,94 @@ var pbar = (function(){
 		pctx.fillStyle = '#573'; pctx.fillRect((x-w/2)-1, 0, w+2, sh);
 		pctx.fillStyle = '#dfc'; pctx.fillRect((x-w/2),   0,   8, sh);
 	};
+	return r;
+})();
+
+
+// volume bar
+var vbar = (function(){
+	var r = {};
+	r.can = ebi('pvol');
+	r.ctx = r.can.getContext('2d');
+	
+	var bctx = r.ctx;
+	var scale = (window.devicePixelRatio || 1) / (
+		bctx.webkitBackingStorePixelRatio ||
+		bctx.mozBackingStorePixelRatio ||
+		bctx.msBackingStorePixelRatio ||
+		bctx.oBackingStorePixelRatio ||
+		bctx.BackingStorePixelRatio || 1);
+	
+	var gradh = 0;
+	var grad1 = null;
+	var grad2 = null;
+	
+	r.draw = function() {
+		var cs = getComputedStyle(r.can);
+		var sw = parseInt(cs['width']);
+		var sh = parseInt(cs['height']);
+		
+		r.can.width = (sw * scale);
+		r.can.height = (sh * scale);
+		bctx.setTransform(scale, 0, 0, scale, 0, 0);
+		
+		if (!grad1 || gradh != sh) {
+			gradh = sh;
+			
+			grad1 = bctx.createLinearGradient(0,0,0,sh);
+			grad1.addColorStop(0,   'hsl(50,45%,42%)');
+			grad1.addColorStop(0.49,'hsl(50,50%,49%)');
+			grad1.addColorStop(0.50,'hsl(50,47%,47%)');
+			grad1.addColorStop(1,   'hsl(50,45%,42%)');
+			
+			grad2 = bctx.createLinearGradient(0,0,0,sh);
+			grad2.addColorStop(0,   'hsl(205,10%,16%)');
+			grad2.addColorStop(0.49,'hsl(205,15%,20%)');
+			grad2.addColorStop(0.50,'hsl(205,13%,18%)');
+			grad2.addColorStop(1,   'hsl(205,10%,16%)');
+		}
+		bctx.fillStyle = grad2; bctx.fillRect(0,0,sw,sh);
+		bctx.fillStyle = grad1; bctx.fillRect(0,0,sw*mp.vol,sh);
+	};
+	
+	var rect;
+	function mousedown(e) {
+		rect = r.can.getBoundingClientRect();
+		mousemove(e);
+	}
+	function mousemove(e) {
+		if (e.changedTouches && e.changedTouches.length > 0) {
+			e = e.changedTouches[0];
+		}
+		else if (e.buttons === 0) {
+			r.can.onmousemove = null;
+			return;
+		}
+		
+		var x = e.clientX - rect.left;
+		var mul = x * 1.0 / rect.width;
+		if (mul > 0.98)
+			mul = 1;
+		
+		mp.setvol(mul);
+		r.draw();
+	}
+	r.can.onmousedown = function(e) {
+		if (e.button !== 0)
+			return;
+		
+		r.can.onmousemove = mousemove;
+		mousedown(e);
+	};
+	r.can.onmouseup = function(e) {
+		if (e.button === 0)
+			r.can.onmousemove = null;
+	};
+	if (window.Touch) {
+		r.can.ontouchstart = mousedown;
+		r.can.ontouchmove = mousemove;
+	}
+	r.draw();
 	return r;
 })();
 
@@ -586,6 +711,7 @@ function play(tid, call_depth) {
 	
 	mp.au.tid = tid;
 	mp.au.src = url;
+	mp.au.volume = mp.expvol();
 	setclass('trk'+tid, 'play act');
 	
 	try {
@@ -633,22 +759,14 @@ function evau_error(e) {
 	if (eplaya.error.message)
 		err += '\n\n' + eplaya.error.message;
 	
-	err += '\n\n' + eplaya + '\n' + eplaya.src;
+	err += '\n\nFile: «' + decodeURIComponent(eplaya.src.split('/').slice(-1)[0]) + '»';
 	
 	alert(err);
 	play(eplaya.tid+1);
 }
 
 
-// hide the ui below
-function unblocked() {
-	var dom = ebi('blocked');
-	if (dom)
-		dom.remove();
-}
-
-
-// show a modal
+// show a fullscreen message
 function show_modal(html) {
 	var body = document.body || document.getElementsByTagName('body')[0];
 	var div = document.createElement('div');
@@ -656,6 +774,14 @@ function show_modal(html) {
 	div.innerHTML = html;
 	unblocked();
 	body.appendChild(div);
+}
+
+
+// hide fullscreen message
+function unblocked() {
+	var dom = ebi('blocked');
+	if (dom)
+		dom.remove();
 }
 
 
@@ -688,3 +814,6 @@ function autoplay_blocked(tid)
 	if (v && v.length > 4 && v.indexOf('#trk') === 0)
 		play(parseInt(v.substr(4)));
 })();
+
+
+//widget.open();
