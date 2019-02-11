@@ -4,13 +4,17 @@ nginx media player
 
 # status
 * works
+* volume slider #wow #whoa
 * opus and vorbis support on iOS (iPhone/iPad)
 
 
 # soon
-* volume slider #wow #whoa
 * super fancy album art view
 * visualizer? maybe
+
+
+# bugs
+* `"<>&` in filenames is a bad idea, see https://github.com/aperezdc/ngx-fancyindex/issues/104
 
 
 # installation
