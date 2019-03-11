@@ -104,6 +104,9 @@ a.play {
 a.play.act {
 	color: #af0;
 }
+a.dl {
+	color: #5cf;
+}
 #blocked {
 	position: fixed;
 	top: 0;
@@ -112,6 +115,18 @@ a.play.act {
 	height: 100%;
 	background: #333;
 	font-size: 2.5em;
+	z-index:99;
+}
+#dl_overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+    background: rgba(0,0,0,0.8);
+    z-index: 90;
+    padding-top: 5em;
+    padding-left: 1em;
 }
 #blk_play,
 #blk_abrt {
@@ -237,8 +252,7 @@ a.play.act {
 	for (var a = 0, aa = nodes.length; a<aa; a++) {
 		// encodeURI          A-Z a-z 0-9 ; , / ? : @ & = + $ - _ . ! ~ * ' ( ) #
 		// encodeURIComponent A-Z a-z 0-9                     - _ . ! ~ * ' ( )
-		var esc_node = encodeURIComponent(nodes[a]);
-		esc_node = nodes[a];  // nevermind nginx-fancyindex doesn't do any filename escaping haha
+		var esc_node = esc(nodes[a]);
 		
 		path += esc_node + '/';
 		if (a == aa - 1)
@@ -253,11 +267,13 @@ a.play.act {
 // extract songs + add play column
 var mp = (function(){
 	var tracks = [];
+	var files = [];
 	var ret = {
 		'au': null,
 		'au_native': null,
 		'au_ogvjs': null,
 		'tracks': tracks,
+		'files': files,
 		'cover_url': ''
 	};
 	var re_audio = new RegExp(/\.(opus|ogg|m4a|aac|mp3|wav|flac)$/, 'i');
@@ -281,17 +297,24 @@ var mp = (function(){
 		if (m) {
 			var ntrack = tracks.length;
 			tracks.push([url, fn]);
+			files.push([url, fn]);
 			
 			html.push('<tr><td><a id="trk'+ntrack+'" href="#trk'+ntrack+'" class="play">play</a></td>');
 		}
 		else if (url.endsWith('/'))
 			html.push('<tr><td style="width:2.1em">dir</td>');
-		else
+		else {
 			html.push('<tr><td></td>');
+			files.push([url, fn]);
+		}
 		
 		html.push(trs[a].innerHTML);
 		html.push('</tr>');
 	}
+	// If we found files, push a download link.
+	if (files.length > 0)
+		html.push('<tr><td></td><td><a id="dl" href="#dl" class="dl">Download all files as .zip</a></td><td></td><td></td></tr>');
+
 	html.push('</tbody>');
 	//alert(tracks.join('\n\n'));
 	
@@ -301,6 +324,9 @@ var mp = (function(){
 	
 	for (var a = 0, aa = tracks.length; a<aa; a++)
 		ebi('trk'+a).onclick = ev_play;
+	if (ebi('dl'))
+		ebi('dl').onclick = downloadZip;
+
 	
 	ret.vol = localStorage.getItem('vol');
 	if (ret.vol !== null)
@@ -323,6 +349,238 @@ var mp = (function(){
 	return ret;
 })();
 
+
+// libarchive management
+
+var SIMUL_DLS = 2;
+
+var AE_IFREG = 32768;
+var AE_IFDIR = 16384;
+var archive_write_new;
+var archive_write_set_format_zip;
+var archive_write_open;
+var archive_entry_new;
+var archive_entry_set_pathname;
+var archive_entry_set_size;
+var archive_entry_set_filetype;
+var archive_write_header;
+var archive_write_data;
+var archive_entry_free;
+var archive_write_free;
+var archive_entry_clear;
+
+var libarchive_loaded = false;
+
+var Module = {
+	preRun: [],
+	postRun: [],
+	print: function(text) {
+		if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+		console.log(text);
+	},
+	printErr: function(text) {
+		if (arguments.length > 1) text = Array.prototype.slice.call(arguments).join(' ');
+		console.error(text);
+	},
+	totalDependencies: 0,
+	onRuntimeInitialized: function() {
+		archive_write_new = Module.cwrap("archive_write_new", 'number', []);
+		archive_write_set_format_zip = Module.cwrap("archive_write_set_format_zip", 'number', ['number']);
+		archive_write_open = Module.cwrap("archive_write_open", 'number', ['number', 'number', 'number', 'number', 'number']);
+		archive_entry_new = Module.cwrap("archive_entry_new", 'number', []);
+		archive_entry_set_pathname = Module.cwrap("archive_entry_set_pathname", null, ['number', 'string']);
+		archive_entry_set_size = Module.cwrap("archive_entry_set_size", null, ['number', 'number']);
+		archive_entry_set_filetype = Module.cwrap("archive_entry_set_filetype", null, ['number', 'number']);
+		archive_write_header = Module.cwrap("archive_write_header", 'number', ['number', 'number']);
+		archive_write_data = Module.cwrap("archive_write_data", 'number', ['number', 'number', 'number']);
+		archive_entry_free = Module.cwrap("archive_entry_free", 'number', ['number', 'number', 'number']);
+		archive_write_free = Module.cwrap("archive_write_free", 'number', ['number']);
+		archive_entry_clear = Module.cwrap("archive_entry_clear", 'number', ['number']);
+		libarchive_loaded = true;
+		// zip immediately
+		downloadZip();
+	}
+};
+
+function setDLStatus(s) {
+	if (s === false) {
+		if (ebi('dl_overlay'))
+			ebi('dl_overlay').remove();
+	} else if (!ebi('dl_overlay')) {
+		var body = document.body || document.getElementsByTagName('body')[0];
+		var div = document.createElement('div');
+		div.setAttribute('id', 'dl_overlay');
+		div.innerHTML = '<h2></h2>';
+		div.children[0].innerText = s;
+		body.appendChild(div)
+	} else {
+		ebi('dl_overlay').children[0].innerText = s;
+	}
+}
+
+function pushDLUpdate(s) {
+	var ovl = ebi('dl_overlay');
+	if (!ovl)
+		return;
+	var div = document.createElement('div');
+	div.innerText = s;
+	ovl.appendChild(div);
+	return div;
+}
+
+function filterFilenameChars(f) {
+	return f.replace(/[\/\<\>:"\\\|\?\*]+/g, "_");
+}
+
+function makeZip(zipName, dls) {
+	var buffers = [];
+	var open_close_cb = Module.addFunction(function (a, cd) {
+		return 0;
+	});
+	var write_cb = Module.addFunction(function (a, cd, buf, len) {
+		var heapView = new Uint8Array(Module.HEAP8.buffer, buf, len);
+		var localBuffer = new Uint8Array(len);
+		localBuffer.set(heapView);
+		buffers.push(localBuffer);
+		return heapView.length;
+	});
+
+	var arch = archive_write_new();
+	archive_write_set_format_zip(arch);
+	archive_write_open(arch, 0, open_close_cb, write_cb, open_close_cb);
+	var entry = archive_entry_new();
+
+
+	var finalize = function() {
+		archive_entry_free(entry);
+		archive_write_free(arch);
+
+		Module.removeFunction(open_close_cb);
+		Module.removeFunction(write_cb);
+
+		// concatenate all of the buffers into one.
+		// doing this at the end is more performant than concating as we
+		// go along.
+		var totalSize = buffers.reduce(function(a, e) { return a + e.length; }, 0);
+		var zipBuffer = new Uint8Array(totalSize);
+		var written = 0;
+		while (buffers.length > 0) {
+			var buf = buffers.shift();
+			zipBuffer.set(buf, written);
+			written += buf.length;
+		}
+
+		// we now have the zip file in the zipBuffer.
+		// download it. Taken from:
+		// https://stackoverflow.com/questions/16086162/handle-file-download-from-ajax-post
+		var zipType = "application/zip";
+		var blob = typeof File === 'function'
+			? new File([zipBuffer], zipName, { type: zipType })
+			: new Blob([zipBuffer], zipName, { type: zipType });
+		if (typeof window.navigator.msSaveBlob !== 'undefined') {
+			window.navigator.msSaveBlob(blob, zipFilename);
+		} else {
+			var URL = window.URL || window.webkitURL;
+			var downloadUrl = URL.createObjectURL(blob);
+
+			var a = document.createElement("a");
+			if (typeof a.download === 'undefined') {
+				window.location = downloadUrl;
+			} else {
+				a.href = downloadUrl;
+				a.download = zipName;
+				document.body.appendChild(a);
+				a.click();
+			}
+			setTimeout(function () {
+				URL.revokeObjectURL(downloadUrl);
+				a.remove();
+			}, 100); // cleanup
+			setDLStatus(false);
+		}
+	};
+	setDLStatus("Zipping...");
+	var updateEl = pushDLUpdate("Zipping " + dls[0].filename + "...");
+	var writeEntry = function() {
+		var dl = dls.shift();
+		updateEl.innerHTML += ' <span style="color:#cf5">Done!</span>';
+		archive_entry_set_pathname(entry, filterFilenameChars(dl.filename));
+		archive_entry_set_size(entry, dl.blob.length);
+		archive_entry_set_filetype(entry, AE_IFREG);
+		archive_write_header(arch, entry);
+
+		var heapPtr = Module._malloc(dl.blob.length);
+		var heapView = new Uint8Array(Module.HEAP8.buffer, heapPtr, dl.blob.length);
+		heapView.set(dl.blob);
+		archive_write_data(arch, heapPtr, dl.blob.length);
+		Module._free(heapPtr);
+
+		archive_entry_clear(entry);
+
+		if (dls.length == 0) {
+			finalize();
+		} else {
+			updateEl = pushDLUpdate("Zipping " + dls[0].filename + "...");
+			setTimeout(writeEntry, 50);
+		}
+	};
+
+	writeEntry();
+}
+
+function downloadZip() {
+
+	setDLStatus('Loading...');
+
+	// Load the runtime if necessary. It will invoke this again
+	// when it's loaded.
+	if (!libarchive_loaded) {
+		import_js("/.nfi-audio/libarchive.js", function() {});
+		return;
+	}
+
+	setDLStatus('Downloading...');
+
+	// Get a file name. Filter pesky characters.
+	var zipName = ebi('path').getElementsByTagName('span')[0].innerText;
+	zipName = filterFilenameChars(zipName) + ".zip";
+
+	// Take a copy of the tracklist.
+	var toDownload = [];
+	for (i in mp.files) {
+		toDownload.push(mp.files[i]);
+	}
+
+	var downloads = [];
+	var download = function(track) {
+		var url = track[0];
+		var fileName = track[1];
+		var updateEl = pushDLUpdate("Downloading " + track[1] + "...");
+
+		var xhr = new XMLHttpRequest();
+		xhr.responseType = 'arraybuffer';
+		xhr.onload = function (e) {
+			var fileBlob = new Uint8Array(e.target.response);
+			downloads.push({
+				"filename" : fileName,
+				"blob" : fileBlob
+			});
+			updateEl.innerHTML += ' <span style="color:#cf5">Done!</span>';
+			if (toDownload.length == 0) {
+				if (downloads.length != mp.files.length)
+					return; // TODO: error handling
+				makeZip(zipName, downloads);
+			} else {
+				download(toDownload.shift());
+			}
+		};
+		xhr.open("GET", url);
+		xhr.send();
+	};
+	// Keep SIMUL_DLS downloads going.
+	for (var i = 0; i < SIMUL_DLS && toDownload.length > 0; i++)
+		download(toDownload.shift());
+}
 
 // create ui
 (function(){
