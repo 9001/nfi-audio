@@ -174,6 +174,17 @@ a.dl {
 	background: #3c3c3c;
 }
 #wtoggle {
+	cursor: url(/.nfi-audio/dd/1.png), pointer;
+	animation: cursor 500ms infinite;
+}
+@keyframes cursor {
+	 0% {cursor: url(/.nfi-audio/dd/2.png), pointer}
+	30% {cursor: url(/.nfi-audio/dd/3.png), pointer}
+	50% {cursor: url(/.nfi-audio/dd/4.png), pointer}
+	75% {cursor: url(/.nfi-audio/dd/5.png), pointer}
+	85% {cursor: url(/.nfi-audio/dd/1.png), pointer}
+}
+#wtoggle {
 	position: absolute;
 	top: -1em;
 	right: 0;
