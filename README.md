@@ -2,6 +2,12 @@
 nginx media player
 
 
+# this project is end-of-life and should not be used
+because the dependency `ngx-fancyindex` is dangerously unmtaintained:
+* https://github.com/aperezdc/ngx-fancyindex/issues/104
+* https://github.com/aperezdc/ngx-fancyindex/pull/128
+
+
 # status
 * works
 * volume slider #wow #whoa
